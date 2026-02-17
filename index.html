@@ -1,0 +1,171 @@
+<!DOCTYPE html><html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Dark Space</title><style>
+:root{--bg:#0f1115;--card:#181b22;--accent:#8b5cf6;--text:#e5e7eb}
+body{margin:0;background:var(--bg);color:var(--text);font-family:sans-serif}
+.center{height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:15px}
+button{background:var(--accent);border:none;color:white;padding:10px 16px;border-radius:12px;cursor:pointer}
+input,textarea{background:#111;border:1px solid #333;color:white;border-radius:10px;padding:10px;width:100%}
+#blog{display:none;padding:20px;max-width:700px;margin:auto}
+.card{background:var(--card);padding:15px;border-radius:18px;margin-bottom:20px;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:none}}
+.caption{outline:none;padding:6px;border-radius:8px}
+.caption:focus{background:#111}
+.mediaRow{display:flex;gap:12px;overflow-x:auto;padding-top:10px}
+.mediaRow img,.mediaRow video{height:220px;border-radius:12px}
+.mediaRow audio{width:220px}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+#confirmBox{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center}
+.confirmCard{background:var(--card);padding:20px;border-radius:18px;text-align:center;max-width:260px}
+.confirmBtns{display:flex;gap:10px;justify-content:center;margin-top:15px}
+</style></head>
+<body><div id="login" class="center">
+<h1>🌙 My Private Space</h1>
+<input id="pass" type="password" placeholder="password">
+<button onclick="enter()">Masuk</button>
+</div><div id="blog">
+<div class="topbar"><h2>Blogku</h2><button onclick="location.reload()">Keluar</button></div>
+<div class="card">
+<textarea id="text" placeholder="Tulis isi pikiran..."></textarea>
+<input id="file" type="file" multiple accept="image/*,video/*,audio/*">
+<button onclick="addPost()">Posting</button>
+</div>
+<div id="posts"></div>
+</div><div id="confirmBox">
+<div class="confirmCard">
+<div id="confirmText">Yakin?</div>
+<div class="confirmBtns">
+<button onclick="confirmYes()">Iya</button>
+<button onclick="closeConfirm()">Tidak</button>
+</div>
+</div>
+</div><script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, orderBy, query } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCNDVQBYSsFf55Q8_AD-jGk4Gt1JvS0dl0",
+  authDomain: "blog-pribadi-5cb05.firebaseapp.com",
+  projectId: "blog-pribadi-5cb05",
+  storageBucket: "blog-pribadi-5cb05.firebasestorage.app",
+  messagingSenderId: "693545692825",
+  appId: "1:693545692825:web:ab65e1b29cf4dcadf9d208"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+const PASSWORD = "1234";
+let confirmAction = null;
+
+window.enter = function(){
+  if(pass.value === PASSWORD){
+    login.style.display = "none";
+    blog.style.display = "block";
+    loadPosts();
+  } else {
+    alert("Password salah");
+  }
+}
+
+window.ask = function(text, action){
+  confirmText.textContent = text;
+  confirmBox.style.display = "flex";
+  confirmAction = action;
+}
+
+window.confirmYes = function(){
+  confirmBox.style.display = "none";
+  if(confirmAction) confirmAction();
+}
+
+window.closeConfirm = function(){
+  confirmBox.style.display = "none";
+}
+
+async function uploadFile(file){
+  const fileRef = ref(storage, "media/" + Date.now() + "_" + file.name);
+  await uploadBytes(fileRef, file);
+  return await getDownloadURL(fileRef);
+}
+
+window.addPost = async function(){
+  const files = [...file.files];
+  let media = [];
+
+  for(const f of files){
+    const url = await uploadFile(f);
+    media.push({ type: f.type, url });
+  }
+
+  await addDoc(collection(db, "posts"), {
+    text: text.value,
+    media: media,
+    time: Date.now()
+  });
+
+  text.value = "";
+  file.value = "";
+  loadPosts();
+}
+
+async function loadPosts(){
+  const q = query(collection(db, "posts"), orderBy("time", "desc"));
+  const snap = await getDocs(q);
+  posts.innerHTML = "";
+
+  snap.forEach(docSnap => {
+    const post = docSnap.data();
+    const id = docSnap.id;
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const cap = document.createElement("div");
+    cap.className = "caption";
+    cap.textContent = post.text;
+    card.appendChild(cap);
+
+    if(post.media?.length){
+      const row = document.createElement("div");
+      row.className = "mediaRow";
+
+      post.media.forEach(m => {
+        let el;
+        if(m.type.startsWith("image")){
+          el = document.createElement("img");
+          el.src = m.url;
+        } else if(m.type.startsWith("video")){
+          el = document.createElement("video");
+          el.src = m.url;
+          el.controls = true;
+        } else {
+          el = document.createElement("audio");
+          el.src = m.url;
+          el.controls = true;
+        }
+        row.appendChild(el);
+      });
+
+      card.appendChild(row);
+    }
+
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "<";
+    delBtn.onclick = () => {
+      ask("Hapus postingan ini?", async () => {
+        await deleteDoc(doc(db, "posts", id));
+        loadPosts();
+      });
+    };
+
+    card.appendChild(delBtn);
+    posts.appendChild(card);
+  });
+}
+</script></body>
+</html>
